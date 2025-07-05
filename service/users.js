@@ -1,6 +1,11 @@
 const { snakeCase } = require('lodash');
 const bcrypt = require('bcrypt');
-const { expressjwt: jwt } = require('express-jwt');
+const jwt = require('jsonwebtoken');
+const { activeTokens } = require('../middleware/auth');
+// JWT配置
+const jwtSecret = 'your_jwt_secret_key'; // 实际应用中应使用环境变量
+const tokenExpiry = '1h';
+
 // 导入数据库操作模块
 const db = {
   users: require('../db/users')
@@ -39,11 +44,42 @@ module.exports = async (app) => {
         user.user_pass
       );
       if (compareRes) {
-        res.customJson(200, 0, null, '登录成功');
+        // 生成JWT令牌
+        const token = jwt.sign(
+          { userId: user.id, username: user.username },
+          jwtSecret,
+          { algorithm: 'HS256', expiresIn: tokenExpiry }
+        );
+
+        // 存储令牌
+        activeTokens.add(token);
+
+        res.customJson(
+          200,
+          0,
+          { token, user: { id: user.id, username: user.username } },
+          '登录成功'
+        );
       } else {
         res.customJson(200, 1, null, '输入的账号或密码错误');
       }
     } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  // 删除用户
+  app.delete('/api/users/:id', async (req, res) => {
+    try {
+      const userId = req.params.id;
+      console.log('userId', userId);
+      const result = await db.users.deleteUser(userId);
+      if (result.affectedRows === 1) {
+        res.customJson(200, 0, null, '用户删除成功');
+      } else {
+        res.customJson(200, 1, null, '用户不存在或删除失败');
+      }
+    } catch (error) {
+      console.log('delete - /api/users/:id', error);
       res.status(500).json({ error: error.message });
     }
   });
